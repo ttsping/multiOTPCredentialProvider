@@ -19,13 +19,96 @@
 **
 ** * * * * * * * * * * * * * * * * * * */
 
+#include <WinSock2.h>
+#include <Ws2ipdef.h>
+#include <WS2tcpip.h>
 #include "Shared.h"
 #include "Logger.h"
 #include "RegistryReader.h"
 #include <tchar.h>
+#include <vector>
 #include "MultiOTPRegistryReader.h"
+#include "winsta.h"
+
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "winsta.lib")
 
 namespace Shared {
+
+	EXTERN_C DECLSPEC_IMPORT BOOLEAN WINAPI WinStationQueryInformationW(
+		_In_opt_ HANDLE hServer,
+		_In_ ULONG SessionId,
+		_In_ WINSTATIONINFOCLASS WinStationInformationClass,
+		_Out_writes_bytes_(WinStationInformationLength) PVOID pWinStationInformation,
+		_In_ ULONG WinStationInformationLength,
+		_Out_ PULONG pReturnLength
+	);
+
+	static bool GetRemoteClientAddress(SOCKADDR* inSockAddr)
+	{
+		if (inSockAddr == nullptr)
+		{
+			return false;
+		}
+
+		ULONG cb = 0;
+		WINSTATIONREMOTEADDRESS ra = { };
+		constexpr auto CURRENT_SESSIONID = static_cast<ULONG>(-1);
+		if (WinStationQueryInformationW(nullptr, CURRENT_SESSIONID, WinStationRemoteAddress, &ra, sizeof(ra), &cb))
+		{
+			if (ra.sin_family == AF_INET)
+			{
+				SOCKADDR_IN& addr = *reinterpret_cast<SOCKADDR_IN*>(inSockAddr);
+				addr.sin_family = ra.sin_family;
+				addr.sin_port = ra.ipv4.sin_port;
+				addr.sin_addr.s_addr = ra.ipv4.in_addr;
+				ZeroMemory(addr.sin_zero, sizeof(addr.sin_zero));
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	bool IsRemoteClientAddressExcluded(const std::wstring& configExcludeAddress)
+	{
+		if (configExcludeAddress.empty())
+		{
+			return false;
+		}
+		SOCKADDR_IN sa4;
+		if (!GetRemoteClientAddress(reinterpret_cast<SOCKADDR*>(&sa4)))
+		{
+			DebugPrint("Get remote client address failed.");
+			return false;
+		}
+
+		if (sa4.sin_family != AF_INET)
+		{
+			DebugPrint("support ipv4 address only.");
+			return false;
+		}
+
+		wchar_t addr[32] = { 0 };
+		if (!InetNtopW(AF_INET, &sa4.sin_addr, addr, _countof(addr)))
+		{
+			DebugPrint("convert ipv4 address to string failed.");
+			return false;
+		}
+
+		std::vector<std::wstring> excludedAddresses;
+		SplitString(configExcludeAddress, excludedAddresses, L";");
+		for (auto& excludedAddr: excludedAddresses)
+		{
+			if (addr == excludedAddr)
+			{
+				DebugPrint("address exclude");
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool IsRequiredForScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, int caller)
 	{
 		DebugPrint(__FUNCTION__);

@@ -81,6 +81,9 @@ Configuration::Configuration()
 	// format domain\username or computername\username
 	excludedAccount = rr.getRegistry(L"excluded_account");
 
+	// e.g. "192.168.1.1;192.196.1.2"
+	excludedAddresses = rr.getRegistry(L"excluded_address");
+
 	// Realm Mapping
 	piconfig.defaultRealm = rr.getRegistry(L"default_realm");
 

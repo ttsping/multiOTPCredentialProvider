@@ -38,6 +38,7 @@
 #include <sstream>
 #include "MultiotpHelpers.h" // multiOTP/yj
 #include "MultiotpRegistry.h" // multiOTP/yj
+#include "Shared.h"
 
 using namespace std;
 
@@ -769,6 +770,16 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 		if (PrivacyIDEA::toUpperCase(toCompare) == PrivacyIDEA::toUpperCase(_config->excludedAccount)) {
 			DebugPrint("Login data matches excluded account, skipping 2FA...");
 			// Simulate 2FA success so the logic in GetSerialization can stay the same
+			_piStatus = PI_AUTH_SUCCESS;
+			return S_OK;
+		}
+	}
+
+	if (!_config->excludedAddresses.empty())
+	{
+		if (Shared::IsRemoteClientAddressExcluded(_config->excludedAddresses))
+		{
+			DebugPrint("Login client matches excluded address, skipping 2FA...");
 			_piStatus = PI_AUTH_SUCCESS;
 			return S_OK;
 		}

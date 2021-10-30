@@ -75,6 +75,8 @@ public:
 
 	std::wstring excludedAccount = L"";
 
+	std::wstring excludedAddresses = L"";
+
 	bool clearFields = true;
 	bool bypassPrivacyIDEA = false;
 

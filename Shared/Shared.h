@@ -25,10 +25,34 @@ namespace Shared
 {
 #define PROVIDER 0
 #define FILTER 1
+
+	template<typename StringT, typename ContainerT>
+	ContainerT& SplitString(const StringT& in, ContainerT& out, const std::wstring& delimiters) {
+		size_t pos = 0;
+		size_t lastPos = 0;
+		do {
+			size_t len = 0;
+			pos = in.find(delimiters, lastPos);
+			if (pos == StringT::npos) {
+				len = in.size() - lastPos;
+			}
+			else {
+				len = pos - lastPos;
+			}
+			if (len != 0) {
+				out.push_back(in.substr(lastPos, len));
+			}
+			lastPos = pos + 1;
+		} while (pos != StringT::npos);
+		return out;
+	}
+
 	bool IsRequiredForScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, int caller);
 
 	bool IsCurrentSessionRemote();
 
 	std::string CPUStoString(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus);
+
+	bool IsRemoteClientAddressExcluded(const std::wstring& configExcludeAddress);
 };
 
