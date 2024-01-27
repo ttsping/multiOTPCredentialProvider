@@ -24,8 +24,8 @@
 *   2023-01-27 5.9.2.2 SysCo/yj ENH: unlock timeout, activate numlock
 *   2022-08-10 5.9.2.1 SysCo/yj ENH: unlock timeout, iswithout2fa, display last authenticated user
 *   2022-05-26 5.9.0.3 SysCo/al-yj ENH: UPN cache, Legacy cache
-    2022-05-20 5.9.0.2 SysCo/yj ENH: Once SMS or EMAIL link is clicked, the link is hidden and a message is displayed to let the user know that the token was sent.
-    2021-11-18 5.8.3.2 SysCo/YJ ENH: Take into account login with user@domain in the excluded account
+	2022-05-20 5.9.0.2 SysCo/yj ENH: Once SMS or EMAIL link is clicked, the link is hidden and a message is displayed to let the user know that the token was sent.
+	2021-11-18 5.8.3.2 SysCo/YJ ENH: Take into account login with user@domain in the excluded account
 **
 ** * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -881,16 +881,6 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 			return S_OK;
 		}
 
-	    if (!_config->excludedAddresses.empty())
-	    {
-		    if (Shared::IsRemoteClientAddressExcluded(_config->excludedAddresses))
-		    {
-			    DebugPrint("Login client matches excluded address, skipping 2FA...");
-			    _piStatus = PI_AUTH_SUCCESS;
-			    return S_OK;
-		    }
-	    }
-
 		// the buffer is allocated by the system
 		LPWSTR	lpNameBuffer;
 
@@ -974,6 +964,17 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 		NetApiBufferFree(lpNameBuffer);
 		
 	}
+
+	if (!_config->excludedAddresses.empty()) 
+	{
+		if (Shared::IsRemoteClientAddressExcluded(_config->excludedAddresses)) 
+		{
+			DebugPrint("Login client matches excluded address, skipping 2FA...");
+			_piStatus = PI_AUTH_SUCCESS;
+			return S_OK;
+		}
+	}
+
 	if (_config->bypassPrivacyIDEA)
 	{
 		DebugPrint("Bypassing privacyIDEA...");
@@ -1261,7 +1262,7 @@ void CCredential::storeLastConnectedUserIfNeeded() {
 		// A conserver pour proposer le dernier login
 		wcscpy_s(username, 1024, _config->provider.field_strings[FID_USERNAME]);
 		// Store the username
-        writeRegistryValueString(LAST_USER_AUTHENTICATED, username);
+		writeRegistryValueString(LAST_USER_AUTHENTICATED, username);
 		// Store the timestamp
 		if (_config->multiOTPTimeoutUnlock > 0) {			
 			const int timestamp = minutesSinceEpoch();
