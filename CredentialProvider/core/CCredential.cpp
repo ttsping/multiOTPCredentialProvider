@@ -2,7 +2,7 @@
 **
 ** Copyright	2012 Dominik Pretzsch
 **				2017 NetKnights GmbH
-**				2020-2021 SysCo systemes de communication sa
+**				2020-2023 SysCo systemes de communication sa
 **
 ** Author		Dominik Pretzsch
 **				Nils Behlen
@@ -19,6 +19,13 @@
 **    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 **    See the License for the specific language governing permissions and
 **    limitations under the License.
+* 
+* Change Log
+*   2023-01-27 5.9.2.2 SysCo/yj ENH: unlock timeout, activate numlock
+*   2022-08-10 5.9.2.1 SysCo/yj ENH: unlock timeout, iswithout2fa, display last authenticated user
+*   2022-05-26 5.9.0.3 SysCo/al-yj ENH: UPN cache, Legacy cache
+    2022-05-20 5.9.0.2 SysCo/yj ENH: Once SMS or EMAIL link is clicked, the link is hidden and a message is displayed to let the user know that the token was sent.
+    2021-11-18 5.8.3.2 SysCo/YJ ENH: Take into account login with user@domain in the excluded account
 **
 ** * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -28,7 +35,7 @@
 #endif
 
 #include "CCredential.h"
-#include "Configuration.h"
+#include "MultiOTPConfiguration.h"
 #include "Logger.h"
 #include "json.hpp"
 #include <resource.h>
@@ -38,11 +45,16 @@
 #include <sstream>
 #include "MultiotpHelpers.h" // multiOTP/yj
 #include "MultiotpRegistry.h" // multiOTP/yj
-#include "Shared.h"
+#include "DsGetDC.h" // multiOTP/yj
+#include "Lm.h" // multiOTP/yj
+#include "mq.h" // multiOTP/yj
+#include "sddl.h" // multiOTP/yj
+#include "credentialprovider.h" // multiOTP/yj
+#include "wtsapi32.h" // multiOTP/yj pour utiliser WTSEnumerateSessions
 
 using namespace std;
 
-CCredential::CCredential(std::shared_ptr<Configuration> c) :
+CCredential::CCredential(std::shared_ptr<MultiOTPConfiguration> c) :
 	_config(c), _util(_config), _privacyIDEA(c->piconfig)
 {
 	_cRef = 1;
@@ -220,6 +232,45 @@ HRESULT CCredential::SetSelected(__out BOOL* pbAutoLogon)
 	{
 		*pbAutoLogon = TRUE;
 	}
+	// Manage link display if it's in one step mode
+	if (_config->provider.cpu == CPUS_LOGON && !_config->credential.passwordMustChange)
+	{
+		if (!_config->twoStepHideOTP)
+		{
+			if (readRegistryValueInteger(CONF_DISPLAY_EMAIL_LINK, 0)) {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_EMAIL, CPFS_DISPLAY_IN_SELECTED_TILE);
+			}
+			else {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_EMAIL, CPFS_HIDDEN);
+			}
+			if (readRegistryValueInteger(CONF_DISPLAY_SMS_LINK, 0)) {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_SMS, CPFS_DISPLAY_IN_SELECTED_TILE);
+			}
+			else {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_SMS, CPFS_HIDDEN);
+			}
+		}
+	}
+
+	if (_config->provider.cpu == CPUS_UNLOCK_WORKSTATION && !_config->credential.passwordMustChange) {
+		if (!_config->twoStepHideOTP)
+		{
+			if (readRegistryValueInteger(CONF_DISPLAY_EMAIL_LINK, 0)) {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_EMAIL, CPFS_DISPLAY_IN_SELECTED_TILE);
+			}
+			else {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_EMAIL, CPFS_HIDDEN);
+			}
+			if (readRegistryValueInteger(CONF_DISPLAY_SMS_LINK, 0)) {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_SMS, CPFS_DISPLAY_IN_SELECTED_TILE);
+			}
+			else {
+				_pCredProvCredentialEvents->SetFieldState(this, FID_REQUIRE_SMS, CPFS_HIDDEN);
+			}
+		}
+	}
+
+
 
 	return hr;
 }
@@ -524,7 +575,44 @@ HRESULT CCredential::CommandLinkClicked(__in DWORD dwFieldID)
 	{
 	   case FID_REQUIRE_SMS:
 		   if(_pCredProvCredentialEvents) {
-			   return multiotp_request(_config->credential.username, L"", L"sms");
+				_config->provider.pCredProvCredential = this;
+				_config->provider.pCredProvCredentialEvents = _pCredProvCredentialEvents;
+				_config->provider.field_strings = _rgFieldStrings;
+				_util.ReadFieldValues();
+				
+			   // Cacher le bouton
+			   hideCPField(_config->provider.pCredProvCredential, _config->provider.pCredProvCredentialEvents, FID_REQUIRE_SMS);
+			   displayCPField(_config->provider.pCredProvCredential, _config->provider.pCredProvCredentialEvents, FID_CODE_SENT_SMS);
+			   return multiotp_request(getCleanUsername(_config->credential.username, _config->credential.domain), L"", L"sms");
+		   }
+		   break;
+	   case FID_REQUIRE_EMAIL:
+		   if (_pCredProvCredentialEvents) {
+			   _config->provider.pCredProvCredential = this;
+			   _config->provider.pCredProvCredentialEvents = _pCredProvCredentialEvents;
+			   _config->provider.field_strings = _rgFieldStrings;
+			   _util.ReadFieldValues();
+
+			   hideCPField(_config->provider.pCredProvCredential, _config->provider.pCredProvCredentialEvents, FID_REQUIRE_EMAIL);
+			   displayCPField(_config->provider.pCredProvCredential, _config->provider.pCredProvCredentialEvents, FID_CODE_SENT_EMAIL);
+			   return multiotp_request(getCleanUsername(_config->credential.username, _config->credential.domain), L"", L"email");
+		   }
+		   break;
+	   case FID_CODE_SENT_SMS:
+		   break;
+	   case FID_CODE_SENT_EMAIL:
+		   break;
+	   case FID_LASTUSER_LOGGED:
+		   if (_pCredProvCredentialEvents) {
+			   PWSTR tempStr = L"";
+			   if (readKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"", L"lastUserAuthenticated", &tempStr, L"") > 1)
+			   {
+				   _pCredProvCredentialEvents->SetFieldString(this, FID_USERNAME, tempStr);
+				   // Hide button
+				   _pCredProvCredentialEvents->SetFieldState(this, FID_LASTUSER_LOGGED, CREDENTIAL_PROVIDER_FIELD_STATE::CPFS_HIDDEN);
+				   // Put focus in password field
+				   _pCredProvCredentialEvents->SetFieldInteractiveState(this, FID_LDAP_PASS, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE::CPFIS_FOCUSED);
+			   }
 		   }
 		   break;
 	   default:
@@ -546,7 +634,6 @@ HRESULT CCredential::GetSerialization(
 )
 {
 	DebugPrint(__FUNCTION__);
-
 	*pcpgsr = CPGSR_RETURN_NO_CREDENTIAL_FINISHED;
 
 	HRESULT hr = E_FAIL, retVal = S_OK;
@@ -750,6 +837,7 @@ void CCredential::PushAuthenticationCallback(bool success)
 // Connect is called first after the submit button is pressed.
 HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 {
+
 	DebugPrint(__FUNCTION__);
 	UNREFERENCED_PARAMETER(pqcws);
 
@@ -757,7 +845,6 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 	_config->provider.pCredProvCredentialEvents = _pCredProvCredentialEvents;
 	_config->provider.field_strings = _rgFieldStrings;
 	_util.ReadFieldValues();
-
 
 	// Check if the user is the excluded account
 	if (!_config->excludedAccount.empty())
@@ -767,29 +854,214 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 			toCompare.append(_config->credential.domain).append(L"\\");
 		}
 		toCompare.append(_config->credential.username);
+
+		// If the excluded account starts with ".\" then replace ".\" by "computername\" JEYA 04.07.2022
+		if (_config->excludedAccount.find_first_of(L".\\") == 0) {
+			WCHAR wsz[MAX_SIZE_DOMAIN];
+			DWORD cch = ARRAYSIZE(wsz);
+			if (GetComputerName(wsz, &cch)) {
+				_config->excludedAccount = wstring(wsz, cch) + L"\\" + _config->excludedAccount.substr(2, _config->excludedAccount.length() - 2);
+			}
+		}
+
+		if (toCompare.find_first_of(L".\\") == 0) {
+			WCHAR wsz[MAX_SIZE_DOMAIN];
+			DWORD cch = ARRAYSIZE(wsz);
+			if (GetComputerName(wsz, &cch)) {
+				toCompare = wstring(wsz, cch) + L"\\" + toCompare.substr(2, toCompare.length() - 2);
+			}
+		}
+
 		if (PrivacyIDEA::toUpperCase(toCompare) == PrivacyIDEA::toUpperCase(_config->excludedAccount)) {
 			DebugPrint("Login data matches excluded account, skipping 2FA...");
 			// Simulate 2FA success so the logic in GetSerialization can stay the same
 			_piStatus = PI_AUTH_SUCCESS;
+			storeLastConnectedUserIfNeeded();
 			return S_OK;
 		}
-	}
 
-	if (!_config->excludedAddresses.empty())
-	{
-		if (Shared::IsRemoteClientAddressExcluded(_config->excludedAddresses))
+	    if (!_config->excludedAddresses.empty())
+	    {
+		    if (Shared::IsRemoteClientAddressExcluded(_config->excludedAddresses))
+		    {
+			    DebugPrint("Login client matches excluded address, skipping 2FA...");
+			    _piStatus = PI_AUTH_SUCCESS;
+			    return S_OK;
+		    }
+	    }
+
+		// the buffer is allocated by the system
+		LPWSTR	lpNameBuffer;
+
+		NET_API_STATUS nas;
+		NETSETUP_JOIN_STATUS BufferType;
+
+		// get info
+		nas = NetGetJoinInformation(NULL, &lpNameBuffer, &BufferType);
+
+		if (nas != NERR_Success)
 		{
-			DebugPrint("Login client matches excluded address, skipping 2FA...");
-			_piStatus = PI_AUTH_SUCCESS;
-			return S_OK;
+			// op failed :(
+			PrintLn(L"Failed");
 		}
-	}
+		else {
+			switch (BufferType) // Source : https://forums.codeguru.com/showthread.php?401584-Which-API-can-retrieve-workgroup-name
+			{
+				case NetSetupDomainName:
+					// Verify with the non UPN domain name
+					if (!_config->credential.domain.empty()) {
+						PWSTR strNetBiosDomainName = L"";
+						PWSTR pszDomain;
+						PWSTR pszUsername;
+						PWSTR pszQualifiedUserName = const_cast<wchar_t*>(toCompare.c_str());
+						DOMAIN_CONTROLLER_INFO* pDCI;
+						HRESULT hr_sfi = S_OK;
+						hr_sfi = SplitDomainAndUsername(pszQualifiedUserName, &pszDomain, &pszUsername); // contoso\admin@contoso.com => [contoso,admin];  admin@contoso.com => [contoso.com,admin]
+						if (SUCCEEDED(hr_sfi)) {
+							if (DsGetDcNameW(NULL, pszDomain, NULL, NULL, DS_IS_DNS_NAME | DS_RETURN_FLAT_NAME, &pDCI) == ERROR_SUCCESS) {
+								strNetBiosDomainName = pDCI->DomainName;
+								toCompare = strNetBiosDomainName;
+								toCompare = toCompare.append(L"\\").append(pszUsername);
+								if (PrivacyIDEA::toUpperCase(toCompare) == PrivacyIDEA::toUpperCase(_config->excludedAccount)) {
+									DebugPrint("Login data matches excluded account, skipping 2FA...");
+									// Simulate 2FA success so the logic in GetSerialization can stay the same
+									_piStatus = PI_AUTH_SUCCESS;
+									// clean up
+									NetApiBufferFree(lpNameBuffer);
+									storeLastConnectedUserIfNeeded();
+									return S_OK;
+								}
+							}
+							else {
+								// In case SplitDomainAndUsername returns netbios domain name
+								toCompare = pszDomain;
+								toCompare = toCompare.append(L"\\").append(pszUsername);
+								if (PrivacyIDEA::toUpperCase(toCompare) == PrivacyIDEA::toUpperCase(_config->excludedAccount)) {
+									DebugPrint("Login data matches excluded account, skipping 2FA...");
+									// Simulate 2FA success so the logic in GetSerialization can stay the same
+									_piStatus = PI_AUTH_SUCCESS;
+									// clean up
+									NetApiBufferFree(lpNameBuffer);
+									storeLastConnectedUserIfNeeded();
+									return S_OK;
+								}
+							}
+						}
+					}
+					break;
 
+				default:
+					TCHAR  infoBuf[32767];
+					DWORD  bufCharCount = 32767;
+					GetComputerName(infoBuf, &bufCharCount);
+					toCompare = infoBuf;												
+					toCompare = toCompare.append(L"\\").append(_config->credential.username);
+					if (PrivacyIDEA::toUpperCase(toCompare) == PrivacyIDEA::toUpperCase(_config->excludedAccount)) {
+						DebugPrint("Login data matches excluded account, skipping 2FA...");
+						// Simulate 2FA success so the logic in GetSerialization can stay the same
+						_piStatus = PI_AUTH_SUCCESS;
+						// clean up
+						NetApiBufferFree(lpNameBuffer);
+						storeLastConnectedUserIfNeeded();
+						return S_OK;
+					}
+					break;
+			}
+		}
+
+		// clean up
+		NetApiBufferFree(lpNameBuffer);
+		
+	}
 	if (_config->bypassPrivacyIDEA)
 	{
 		DebugPrint("Bypassing privacyIDEA...");
 		_config->bypassPrivacyIDEA = false;
 
+		return S_OK;
+	}
+
+	// Is multiOTP unlock timeout activated ?
+	if (_config->multiOTPTimeoutUnlock > 0) {
+		DebugPrint("multiOTP timeout Unlock is configured on : "+ std::to_string(_config->multiOTPTimeoutUnlock) + " minutes");
+
+		// Let's search for the SID of the user that tries to log in
+		wchar_t username[1024];
+		std::wstring temp = cleanUsername(_config->provider.field_strings[FID_USERNAME]);
+		wcscpy_s(username, 1024, temp.c_str());
+		HRESULT hr = MQ_OK;
+		PSID authLoginUserSid = NULL;
+		hr = CCredential::getSid(username, &authLoginUserSid);
+		if (FAILED(hr))
+		{
+			// Write in the log that it has failed
+			DebugPrint(L"GetSid has failed with username: ");
+			DebugPrint(username);
+			DebugPrint(hr);
+			DebugPrint("****");
+		}
+		else {
+			// Convert SID to string
+			LPTSTR authLoginUserSidAsString = NULL;
+			ConvertSidToStringSid(authLoginUserSid, &authLoginUserSidAsString);
+			DebugPrint(L"The SID of the user trying to connect is: " + (std::wstring)authLoginUserSidAsString);
+
+			// Check the registry. Has this user logged in recently ?
+			if (hasloggedInRecently(authLoginUserSidAsString))
+			{
+				DebugPrint("The user has logged in recently");
+				WTS_SESSION_INFOW* pSessionInfo = NULL;
+				DWORD count;
+				// Look for the user in the current computer sessions
+				if (0 != WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, &pSessionInfo, &count))
+				{
+					DebugPrint("Number of active sessions:" + std::to_string(count));
+
+					// For each session
+					for (int index = 0; index < count; index++) {
+						DebugPrint("Session number:   " + std::to_string(index));
+						DebugPrint("        id:       " + std::to_string(pSessionInfo[index].SessionId));
+						DebugPrint("        state:    " + std::to_string(pSessionInfo[index].State));
+
+						LPWSTR name;
+						DWORD nameSize;
+						WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, pSessionInfo[index].SessionId, _WTS_INFO_CLASS::WTSUserName, &name, &nameSize);
+						DebugPrint(L"        username: " + (wstring)name);
+
+						PSID pSessionUserSid = NULL;
+						hr = CCredential::getSid(name, &pSessionUserSid);
+						if (FAILED(hr)) {
+							DebugPrint("FAILED to find the SID");
+						}
+						else {
+							LPTSTR sessionSidAsString = NULL;
+							ConvertSidToStringSid(pSessionUserSid, &sessionSidAsString);
+
+							DebugPrint(L"        sid:      " + (wstring)sessionSidAsString);
+							
+							// Is the session linked to the user trying to connect ?
+							if (pSessionInfo[index].State == WTS_CONNECTSTATE_CLASS::WTSActive && wcscmp(authLoginUserSidAsString,sessionSidAsString)==0) {
+								DebugPrint("Found a session for the user trying to connect");
+								_piStatus = PI_AUTH_SUCCESS; // Ne pas stocker l'heure de login sinon cela prolongerait le timeout
+								return S_OK;
+							}
+						}
+					}
+					DebugPrint("No session found");
+				}
+			}
+			else {
+				DebugPrint("The user has NOT logged in recently");
+			}
+		}
+	}
+
+	
+	// The user is without2fa no need to go further
+	if (_config->multiOTPWithout2FA && _privacyIDEA.isWithout2FA(_config->credential.username, _config->credential.domain))
+	{
+		_piStatus = PI_AUTH_SUCCESS;
+		storeLastConnectedUserIfNeeded(); 
 		return S_OK;
 	}
 
@@ -799,7 +1071,14 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 		{
 			// Delay for a short moment, otherwise logonui freezes (???)
 			this_thread::sleep_for(chrono::milliseconds(200));
+		
 			// Then skip to next step
+
+			// Activate the numlock			
+			if (_config->numlockOn && GetKeyState(VK_NUMLOCK) == 0 ) {
+				keybd_event(VK_NUMLOCK, 0x45, KEYEVENTF_EXTENDEDKEY | 0, 0);
+				keybd_event(VK_NUMLOCK, 0x45, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
+			}
 		}
 		else
 		{
@@ -807,7 +1086,6 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 			SecureWString toSend = L"sms";
 			if (!_config->twoStepSendEmptyPassword && _config->twoStepSendPassword)
 				toSend = _config->credential.password;
-
 			_piStatus = _privacyIDEA.validateCheck(_config->credential.username, _config->credential.domain, toSend);
 			if (_piStatus == PI_TRIGGERED_CHALLENGE)
 			{
@@ -843,17 +1121,36 @@ HRESULT CCredential::Connect(__in IQueryContinueWithStatus* pqcws)
 			_config->credential.domain,
 			SecureWString(_config->credential.otp.c_str()),
 			"");
+		PWSTR tempStr = L"";
+		if (_piStatus == PI_AUTH_SUCCESS)
+		{
+			storeLastConnectedUserIfNeeded();
+		}
+		if (readKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"", L"currentOfflineUser", &tempStr, L"") > 1) {
+			PWSTR pszDomain;
+			PWSTR pszUsername;
+			SplitDomainAndUsername(tempStr, &pszDomain, &pszUsername); // contoso\admin@contoso.com => [contoso,admin];  admin@contoso.com => [contoso.com,admin]
+			_config->credential.username = pszUsername;
+			_config->credential.domain = pszDomain;
+		}
 	}
 	//////// NORMAL SETUP WITH 3 FIELDS -> SEND OTP ////////
 	else
 	{
+		// A voir si on vient ici
 		_piStatus = _privacyIDEA.validateCheck(
 			_config->credential.username,
 			_config->credential.domain,
 			SecureWString(_config->credential.otp.c_str()),
 			"");
+		PWSTR tempStr = L"";
+		if (_piStatus == PI_AUTH_SUCCESS) {
+			if (readKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"", L"currentOfflineUser", &tempStr, L"") > 1) {
+				_config->credential.username = tempStr;
+			}
+			storeLastConnectedUserIfNeeded();
+		}
 	}
-
 	DebugPrint("Connect - END");
 	return S_OK; // always S_OK
 }
@@ -935,4 +1232,194 @@ HRESULT CCredential::ReportResult(
 	*/
 	_util.ResetScenario(this, _pCredProvCredentialEvents);
 	return S_OK;
+}
+
+void CCredential::storeLastConnectedUserIfNeeded() {
+	PSID pTrustedUserSid = NULL;
+	HRESULT hr = MQ_OK;
+
+	if (_config->multiOTPDisplayLastUser || _config->multiOTPTimeoutUnlock > 0) {
+		wchar_t username[1024];
+
+		// R?cup?rer le SID
+		std::wstring temp = cleanUsername(_config->provider.field_strings[FID_USERNAME]);
+		wcscpy_s(username, 1024, temp.c_str());
+		hr = CCredential::getSid(username, &pTrustedUserSid);
+		if (FAILED(hr))
+		{
+			// Write in the log that it has failed
+			DebugPrint(L"GetSid has failed with username: ");
+			DebugPrint(username);
+			DebugPrint(hr);
+			DebugPrint("****");
+		}
+
+		// Store the SID and timestamp in order to check for locked users
+		CCredential::storeSidAndTimeStamp(pTrustedUserSid);
+
+		// A conserver pour proposer le dernier login
+		wcscpy_s(username, 1024, _config->provider.field_strings[FID_USERNAME]);
+		// Store the username
+        writeRegistryValueString(LAST_USER_AUTHENTICATED, username);
+		// Store the timestamp
+		if (_config->multiOTPTimeoutUnlock > 0) {			
+			const int timestamp = minutesSinceEpoch();
+			writeRegistryValueInteger(LAST_USER_TIMESTAMP, timestamp);
+		}
+	} else {
+		// Remove the registry value if the settings is disabled
+		writeRegistryValueString(LAST_USER_AUTHENTICATED, L"");
+	}
+}
+
+std::wstring CCredential::cleanUsername(std::wstring username)
+{
+	std::wstring clean = username;
+
+	// Enlever ce qu'il y a avant le
+	if (clean.find('\\') != string::npos) {
+		clean = clean.substr(clean.find('\\') + 1);
+	}
+
+	if (clean.find('@') != string::npos) {
+		clean = clean.substr(0, clean.find('@'));
+	}
+	return clean;
+}
+
+/**
+Source : https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms707085(v=vs.85)?redirectedfrom=MSDN#Anchor_1
+**/
+HRESULT CCredential::getSid(LPCWSTR wszAccName, PSID* ppSid)
+{
+	// Validate the input parameters.  
+	if (wszAccName == NULL || ppSid == NULL)
+	{
+		return MQ_ERROR_INVALID_PARAMETER;
+	}
+
+	// Create buffers that may be large enough.  
+	// If a buffer is too small, the count parameter will be set to the size needed.  
+	const DWORD INITIAL_SIZE = 32;
+	DWORD cbSid = 0;
+	DWORD dwSidBufferSize = INITIAL_SIZE;
+	DWORD cchDomainName = 0;
+	DWORD dwDomainBufferSize = INITIAL_SIZE;
+	WCHAR* wszDomainName = NULL;
+	SID_NAME_USE eSidType;
+	DWORD dwErrorCode = 0;
+	HRESULT hr = MQ_OK;
+
+	// Create buffers for the SID and the domain name.  
+	*ppSid = (PSID) new BYTE[dwSidBufferSize];
+	if (*ppSid == NULL)
+	{
+		return MQ_ERROR_INSUFFICIENT_RESOURCES;
+	}
+	memset(*ppSid, 0, dwSidBufferSize);
+	wszDomainName = new WCHAR[dwDomainBufferSize];
+	if (wszDomainName == NULL)
+	{
+		return MQ_ERROR_INSUFFICIENT_RESOURCES;
+	}
+	memset(wszDomainName, 0, dwDomainBufferSize * sizeof(WCHAR));
+
+	// Obtain the SID for the account name passed.  
+	for (; ; ) // boucle infinie
+	{
+
+		// Set the count variables to the buffer sizes and retrieve the SID.  
+		cbSid = dwSidBufferSize;
+		cchDomainName = dwDomainBufferSize;
+		if (LookupAccountNameW(
+			NULL,            // Computer name. NULL for the local computer  
+			wszAccName,
+			*ppSid,          // Pointer to the SID buffer. Use NULL to get the size needed,  
+			&cbSid,          // Size of the SID buffer needed.  
+			wszDomainName,   // wszDomainName,  
+			&cchDomainName,
+			&eSidType
+		))
+		{
+			if (IsValidSid(*ppSid) == FALSE)
+			{
+				DebugPrint(L"The SID for %s is invalid.\n", wszAccName);
+				dwErrorCode = MQ_ERROR;
+			}
+			break;
+		}
+		dwErrorCode = GetLastError();
+
+		// Check if one of the buffers was too small.  
+		if (dwErrorCode == ERROR_INSUFFICIENT_BUFFER)
+		{
+			if (cbSid > dwSidBufferSize)
+			{
+
+				// Reallocate memory for the SID buffer.  
+				DebugPrint(L"The SID buffer was too small. It will be reallocated.\n");
+				FreeSid(*ppSid);
+				*ppSid = (PSID) new BYTE[cbSid];
+				if (*ppSid == NULL)
+				{
+					return MQ_ERROR_INSUFFICIENT_RESOURCES;
+				}
+				memset(*ppSid, 0, cbSid);
+				dwSidBufferSize = cbSid;
+			}
+			if (cchDomainName > dwDomainBufferSize)
+			{
+
+				// Reallocate memory for the domain name buffer.  
+				DebugPrint(L"The domain name buffer was too small. It will be reallocated.");
+				delete[] wszDomainName;
+				wszDomainName = new WCHAR[cchDomainName];
+				if (wszDomainName == NULL)
+				{
+					return MQ_ERROR_INSUFFICIENT_RESOURCES;
+				}
+				memset(wszDomainName, 0, cchDomainName * sizeof(WCHAR));
+				dwDomainBufferSize = cchDomainName;
+			}
+		}
+		else
+		{
+			hr = HRESULT_FROM_WIN32(dwErrorCode);
+			break;
+		}
+	}
+
+	delete[] wszDomainName;
+	return hr;
+}
+
+
+HRESULT CCredential::storeSidAndTimeStamp(PSID ppsid) {
+	LPTSTR StringSid = NULL;
+	ConvertSidToStringSid(ppsid, &StringSid);
+	const int timestamp = minutesSinceEpoch();
+	writeKeyValueIntegerInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"history", StringSid, timestamp);
+	return S_OK;
+}
+
+
+/*
+* Check if the SID exists in the history table AND check if the timeStamp is correct
+*/
+bool CCredential::hasloggedInRecently(LPTSTR userId) {
+	DWORD lastLoggedInTime = 0;
+
+	// Is multiOTP configured for unlockTimeout ?
+	if (_config->multiOTPTimeoutUnlock > 0) {
+		// Search if the key exists
+		lastLoggedInTime = readKeyValueInMultiOTPRegistryInteger(HKEY_CLASSES_ROOT, L"history", userId, 0);
+
+		DebugPrint(L"LAST LOGGED IN TIME FOR USER: "+ (std::wstring)userId );		
+		DebugPrint(lastLoggedInTime);
+
+		const int timestamp = minutesSinceEpoch();
+
+		return (timestamp- lastLoggedInTime) < _config->multiOTPTimeoutUnlock;
+	}
+	return false;
 }

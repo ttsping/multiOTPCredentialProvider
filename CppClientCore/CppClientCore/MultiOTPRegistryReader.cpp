@@ -2,10 +2,10 @@
  * multiOTP Credential Provider, extends privacyIdea RegistryReader
  *
  * @author    Yann Jeanrenaud, SysCo systemes de communication sa, <info@multiotp.net>
- * @version   5.8.3.0
- * @date      2021-09-14
+ * @version   5.9.7.1
+ * @date      2023-12-03
  * @since     2021
- * @copyright (c) 2016-2021 SysCo systemes de communication sa
+ * @copyright (c) 2016-2023 SysCo systemes de communication sa
  * @copyright (c) 2015-2016 ArcadeJust ("RDP only" enhancement)
  * @copyright (c) 2013-2015 Last Squirrel IT
  * @copyright Apache License, Version 2.0
@@ -75,6 +75,51 @@ std::wstring MultiOTPRegistryReader::getRegistry(std::wstring name, HKEY contain
 bool MultiOTPRegistryReader::getBoolRegistry(std::wstring name, HKEY container)
 {
 	return getRegistry(name, container) == L"1";
+}
+
+bool MultiOTPRegistryReader::getBoolRegistryDWORD(std::wstring name, HKEY container)
+{
+	return getRegistryDWORD(name, container) == 1;
+}
+
+DWORD MultiOTPRegistryReader::getRegistryDWORD(std::wstring name, HKEY container)
+{
+	DWORD dwRet = NULL;
+	HKEY hKey = nullptr;
+	dwRet = RegOpenKeyEx(
+		container,
+		wpath.c_str(),
+		NULL,
+		KEY_QUERY_VALUE,
+		&hKey);
+	if (dwRet != ERROR_SUCCESS)
+	{
+		return 0;
+	}
+
+	const DWORD SIZE = 1024;
+	DWORD dwReturnLong;
+	DWORD dwValue = SIZE;
+	DWORD dwType = 0;
+	dwRet = RegQueryValueEx(
+		hKey,
+		name.c_str(),
+		NULL,
+		&dwType,
+		(LPBYTE)&dwReturnLong,
+		&dwValue);
+	if (dwRet != ERROR_SUCCESS)
+	{
+		return 0;
+	}
+
+	if (dwType != REG_DWORD)
+	{
+		return 0;
+	}
+	RegCloseKey(hKey);
+	hKey = NULL;
+	return dwReturnLong;
 }
 
 int MultiOTPRegistryReader::getIntRegistry(std::wstring name, HKEY container)

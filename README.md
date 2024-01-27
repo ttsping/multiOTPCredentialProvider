@@ -2,16 +2,14 @@ multiOTPCredentialProvider
 ==========================
 multiOTP Credential Provider for multiOTP is a free and open source implementation of a V2 Credential Provider for the multiOTP strong two-factor authentication solution (Apache License, Version 2.0)
 
-(c) 2016-2021 SysCo systemes de communication sa (enhancements since 2016 and simple installer with configuration options)  
-(c) 2017-2021 NetKnights GmbH
+(c) 2016-2023 SysCo systemes de communication sa (enhancements since 2016 and simple installer with configuration options)  
+(c) 2017-2021 NetKnights GmbH  
 (c) 2015-2016 ArcadeJust ("RDP only" enhancement)  
 (c) 2013-2015 Last Squirrel IT  
 
-Current build: 5.8.3.0 (2021-09-14)
+Current build: 5.9.7.1 (2023-12-03)  
 
 The binary download page is available here : https://download.multiotp.net/credential-provider/ (download link are at the bottom of the page)
-
-Please note that the multiOTPCredentialProvider-files-only-A.B.C.D.zip zipped file contains only the DLL in x64 format.
 
 [![Donate via PayPal](https://img.shields.io/badge/donate-paypal-87ceeb.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&currency_code=USD&business=paypal@sysco.ch&item_name=Donation%20for%20multiOTP%20project)
 *Please consider supporting this project by making a donation via [PayPal](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&currency_code=USD&business=paypal@sysco.ch&item_name=Donation%20for%20multiOTP%20project)*
@@ -31,59 +29,71 @@ multiOTP Credential Provider for multiOTP supporting Windows 7/8/8.1/10/2012(R2)
 
 PREREQUISITES
 =============
-- last x86 AND x64 MSVC++ redistribuable installed (Microsoft Visual C++ Redistributable for Visual Studio 2015, 2017 and 2019)
-  https://aka.ms/vs/16/release/vc_redist.x86.exe and https://aka.ms/vs/16/release/vc_redist.x64.exe
-- installed multiOTP server(s)
+- For x64 edition: last x64 MSVC++ redistribuable installed (Microsoft Visual C++ Redistributable for Visual Studio 2015, 2017, 2019 and 2022)
+  https://aka.ms/vs/17/release/vc_redist.x64.exe
+- For x86 edition: last x86 MSVC++ redistribuable installed (Microsoft Visual C++ Redistributable for Visual Studio 2015, 2017, 2019 and 2022)
+  https://aka.ms/vs/17/release/vc_redist.x86.exe
+- installed multiOTP server(s) (or select local use during install)
 - configured multiOTP user (multiOTP username = [domain user name] or [windows local account name] or [microsoft account name])
 
 
 MANUAL INSTALLATION
 ===================
-Launch the installer (in the installer directory) and configure the various parameters during the setup. You must have administrator access to successfully install the multiOTP Credential Provider.
+Launch the installer (in the installer directory) and configure the various parameters during the setup. You must have administrator access to successfully install the multiOTP Credential Provider.  
+Which Authentication Mode should I choose?  
+* "OTP authentication mandatory for remote remote desktop only"       User must have OTP only when the login is done using remote desktop (mstsc). User logs in locally on the computer with the Windows password only.  
+* "OTP authentication mandatory for local logon and remote desktop"   User must have OTP when login is done using remote desktop (mstsc) or when it's done locally on the computer.  
+* "OTP and std auth. for local and remote (to check OTP validation)"  User can login with OTP or without OTP using remote desktop (mstsc) or locally on the computer.  
 
 
 MSI DEPLOYMENT
 ==============
-Be sure that last x86 AND x64 MSVC++ redistribuable are installed.
-If it's not the case, you can deploy them automatically using the four MSI provided in the vc_redist_MSI.zip file
+Be sure that last MSVC++ redistribuable are installed.
+If it's not the case, you can deploy them automatically using the four MSI provided in the VC++_MSI_Deployment folder
 
 Using Orca, you can create Transform files in order to set the settings of the credential provider.
 The following properties can be set :
-    MULTIOTP_TIMEOUT        Number of seconds to wait for the multiOTP server response. Default value 5.
-    MULTIOTP_CACHE          0|1 1 to enable local cache.
-    MULTIOTP_CPUSCREDUI     run as admin mode (0 or 1 or 2 + e or d for example 1e)
-    MULTIOTP_TIMEOUTCP      Number of seconds to wait for the credentail provider to respond. Default value 60.
-    MULTIOTP_TWO_STEP_HIDE_OTP 0|1 1 to force the credential to request an OTP password in a second step.
-    MULTIOTP_TWO_STEP_SEND_PASSWORD 0|1 1 to enable the credential to request an OTP password by SMS.    
-    MULTIOTP_CPUSLOGON      logon mode (0 or 1 or 2 + e or d for example 1e)
-    MULTIOTP_CPUSUNLOCK     unlock mode (0 or 1 or 2 + e or d for example 1e)
-    MULTIOTP_DISPLAYSMSLINK 0|1 1 to enable the sms link on the OTP authentication page.
-    MULTIOTP_LOGINTEXT      text displayed underneath the credential logo.
-    MULTIOTP_BITMAP_PATH    The complete path and filename of the bmp image. Size must be 128x128 pixels.
-    MULTIOTP_URL            FQDN of the multiOTP server for example https://192.168.1.188
-    MULTIOTP_SECRET         Secret shared with the smultiOTP server.
-    MULTIOTP_OTP_TEXT       Text displayed in the OTP field.
-    MULTIOTP_OTP_HINT_TEXT  Text displayed when prompted to enter the OTP in the second step.
-    MULTIOTP_OTP_FAIL_TEXT  Text displayed when OTP code is not valid.
-    MULTIOTP_EXCLUDED_ACCOUNT Specify an account that should be excluded from 2FA. For example contoso\backdoor
+* MULTIOTP_TIMEOUT           Number of seconds to wait for the multiOTP server response. Default value 5.
+* MULTIOTP_CACHE             0|1 1 to enable local cache.
+* MULTIOTP_CPUSCREDUI        run as admin mode (0 or 1 or 2 + e or d for example 1e)
+* MULTIOTP_TIMEOUTCP         Number of seconds to wait for the credentail provider to respond. Default value 60.
+* MULTIOTP_TWO_STEP_HIDE_OTP 0|1 1 to force the credential to request an OTP password in a second step.
+* MULTIOTP_TWO_STEP_SEND_PASSWORD 0|1 1 to enable the credential to request an OTP password by SMS or e-mail.    
+* MULTIOTP_CPUSLOGON         logon mode (0 or 1 or 2 + e or d for example 1e)
+* MULTIOTP_CPUSUNLOCK        unlock mode (0 or 1 or 2 + e or d for example 1e)
+* MULTIOTP_DISPLAYSMSLINK    0|1 1 to enable the sms link on the OTP authentication page.
+* MULTIOTP_DISPLAYEMAILLINK  0|1 1 to enable the e-mail link on the OTP authentication page.
+* MULTIOTP_LOGINTEXT         text displayed underneath the credential logo.
+* MULTIOTP_BITMAP_PATH       The complete path and filename of the bmp image. Size must be 128x128 pixels.
+* MULTIOTP_URL               FQDN of the multiOTP server for example https://192.168.1.188
+* MULTIOTP_SECRET            Secret shared with the smultiOTP server.
+* MULTIOTP_OTP_TEXT          Text displayed in the OTP field.
+* MULTIOTP_OTP_HINT_TEXT     Text displayed when prompted to enter the OTP in the second step.
+* MULTIOTP_OTP_FAIL_TEXT     Text displayed when OTP code is not valid.
+* MULTIOTP_EXCLUDED_ACCOUNT  Specify an account that should be excluded from 2FA. For example contoso\backdoor
+* MULTIOTP_UPNFORMAT         0|1 1 to use UPN format (kevin@test.com instead of kevin) for the username when credential provider calls multiOTP.
+* MULTIOTP_DISPLAYLASTUSER   0|1 1 to display a button in order to autocomplete the username with the last username authenticated
+* MULTIOTP_TIMEOUTUNLOCK     Timeout (in minutes) before asking 2FA again on unlock (0 means always ask)
+* MULTIOTP_WITHOUT2FA	     0|1 1 to disable 2FA prompt for multiTOP without2FA users
+* MULTIOTP_NUMLOCKON	     0|1 1 to enable NumLock during published apps authentication
 
 Copy the MSI and MST files to a share which is accessible in Read-Execute for every computers
 
-Create a GPO that applies to the selected computers, adding the following settings:
-  Computer Settings > Administrative Templates > System > Logon
-    Always wait for the network at computer startup and logon - Enabled
+Create a GPO that applies to the selected computers, adding the following settings:  
+* Computer Settings > Administrative Templates > System > Logon
+  * Always wait for the network at computer startup and logon - Enabled
 
-Create a second GPO that applies to the selected computers, adding the following settings:
-  Computer Configuration > Policies > Administrative Templates > System > Group Policy
-    Enable the Specify startup policy processing wait time. Set Amount of time to wait (in seconds): = 120
+Create a second GPO that applies to the selected computers, adding the following settings:  
+* Computer Configuration > Policies > Administrative Templates > System > Group Policy
+  * Enable the Specify startup policy processing wait time. Set Amount of time to wait (in seconds): = 120
 
-If x86 AND x64 MSVC++ redistributable are not already installed on those computers,
+If MSVC++ redistributable are not already installed on those computers,
 create a GPO to deploy the 4 x86 AND x64 MSVC++ redistribuable files.
 
 Finaly, create a GPO that applies to the selected computers to deploy the MSI with its MST file
 
 To force to apply the GPO on the selected computers:
-gpupdate /force /boot on each computer, using administrator privilege
+* gpupdate /force /boot on each computer, using administrator privilege
 
 
 LOCAL ONLY STRONG AUTHENTICATION INSTALLATION
@@ -116,38 +126,43 @@ TECHNICAL DETAILS
   (registry entries have priority over multiotp.ini file entries): HKEY_CLASSES_ROOT\CLSID\{FCEFDFAB-B0A1-4C4D-8B2B-4FF4E0A3D978}
 - the previous registry keys (up to 5.8.1.x) are converted to the new values
 - the available registry keys are
-   cpus_logon                    Logon authentication type [0|1|2|3][e|d]
+   * cpus_logon                    Logon authentication type [0|1|2|3][e|d]
                                  0: relevant for remote (RDP) and local operation
                                  1: relevant for remote operation
                                  2: relevant for local operation
                                  3: relevent for remote and local operation - but multiOTP Credential Provider is completely disabled.
-                                 “e”: Only the multiOTP Credential Provider is available. All other credential providers are not available.
-                                 “d”: In addition all other credential providers are available.
+                                 e: Only the multiOTP Credential Provider is available. All other credential providers are not available.
+                                 d: In addition all other credential providers are available.
                                  Example: cpus_logon = 0e: Only the multiOTP Credential Provider is available for Logon via remote and locally.                                 
                                  
-   cpus_unlock                   Unlock authentication type [0|1|2|3][e|d]
-   cpus_credui                   Authentication in Windows authentication type [0|1|2|3][e|d]
-   excluded_account              Specify an account that should be excluded from 2FA. The format is required to be domainusername or computernameusername.
-   login_text                    Specify the text that is displayed underneath the Credential Provider logo and on the right side where available credentials arelisted.
-   multiOTPCacheEnabled          [1|0], used directly by multiOTP
-   multiOTPDefaultPrefix         [Default computer/domain, default is '']. multiOTP use automatically the domain name as default, or computer
-                                 name if the computer is not in a domain. You can set here a manual default computer/domain, like for example '.'
-   multiOTPDisplaySmsLink        [0|1]
-   multiOTPServers               [multiOTP server(s) to contact, default is 'https://192.168.1.88'], used directly by multiOTP
-   multiOTPServerTimeout         [timeout in seconds before switching to the next server, default is 5], used directly by multiOTP
-   multiOTPSharedSecret          [secret to connect this client to the server, default is 'ClientServerSecret'], used directly by multiOTP
-   multiOTPTimeout               [timeout in seconds, default is 60]
-   two_step_hide_otp             [0|1] Set to 1 if the Credential Provider should ask for the user’s OTP in a second step. In the first step the
-                                 user will only be asked for the password.
-   two_step_send_password        [0|1] Set to 1 if the Credential Provider should send the user’s password to the multiOTP server
-   two_step_send_empty_password  [0|1] Set to 1 if the Credential Provider should send an empty password to the multiOTP server
-   otp_text                      Speficy the text that is displayed in the OTP input field. Usually this is “One-Time Password”, but you can change it
-                                 to any other value you like.
-   otp_hint_text                 Speficy the text that is displayed when prompted to enter the OTP in the second step.
-   otp_fail_text                 Specify a custom text that is shown when the OTP verification failed.
-   v1_bitmap_path                The complete path and filename of a bitmap image. This is a customized login image. The image must be a version 3
-                                 Windows BMP file with a resolution of 128x128 pixels.
-
+   * cpus_unlock                   Unlock authentication type [0|1|2|3][e|d]
+   * cpus_credui                   Authentication in Windows authentication type (when action requires admin rights for example) [0|1|2|3][e|d]
+   * excluded_account              Specify an account that should be excluded from 2FA. The format is required to be domain\username or computername\username.
+   * login_text                    Specify the text that is displayed underneath the Credential Provider logo and on the right side where available credentials arelisted.
+   * multiOTPCacheEnabled          [1|0], used directly by multiOTP
+   * multiOTPDefaultPrefix         [Default computer/domain, default is '']. multiOTP use automatically the domain name as default, or computer
+                                   name if the computer is not in a domain. You can set here a manual default computer/domain, like for example '.'
+   * multiOTPDisplaySmsLink        [0|1]
+   * multiOTPDisplayEmailLink      [0|1]
+   * multiOTPServers               [multiOTP server(s) to contact, default is 'https://192.168.1.88'], used directly by multiOTP
+   * multiOTPServerTimeout         [timeout in seconds before switching to the next server, default is 5], used directly by multiOTP
+   * multiOTPSharedSecret          [secret to connect this client to the server, default is 'ClientServerSecret'], used directly by multiOTP
+   * multiOTPTimeout               [timeout in seconds, default is 60]
+   * multiOTPUPNFormat			       [0|1] Set to 1 to use UPN username (kevin@test.com) instead of username (kevin)
+   * numlockOn                     [0|1]Set to 1 to enable NumLock during published apps authentication
+   * two_step_hide_otp             [0|1] Set to 1 if the Credential Provider should ask for the user's OTP in a second step. In the first step the
+                                   user will only be asked for the password.
+   * two_step_send_password        [0|1] Set to 1 if the Credential Provider should send the user's password to the multiOTP server
+   * two_step_send_empty_password  [0|1] Set to 1 if the Credential Provider should send an empty password to the multiOTP server
+   * otp_text                      Speficy the text that is displayed in the OTP input field. Usually this is "One-Time Password", but you can change it
+                                   to any other value you like.
+   * otp_hint_text                 Speficy the text that is displayed when prompted to enter the OTP in the second step.
+   * otp_fail_text                 Specify a custom text that is shown when the OTP verification failed.
+   * v1_bitmap_path                The complete path and filename of a bitmap image. This is a customized login image. The image must be a version 3
+                                   Windows BMP file with a resolution of 128x128 pixels.
+   * multiOTPTimeoutUnlock		   Timeout (in minutes) before asking 2FA again on unlock (0 means always ask)
+   * multiOTPDisplayLastUser       [0|1] Set to 1 to display a button in order to autocomplete the username with the last username authenticated
+   * multiOTPWithout2FA            [0|1] Set to 1 to disable 2FA prompt for multiTOP without2FA users
 
 THANKS TO
 =========
@@ -163,6 +178,37 @@ Report if you have any problems or questions regarding this app.
 CHANGE LOG OF RELEASED VERSIONS
 ===============================
 ```
+2023-12-03 5.9.7.1 FIX: Using domain prefix for windows authentication in addition to using it during multiOTP authentication
+                   FIX: Third party VPN client works on the login page when credential provider is active
+                   FIX: Comparing pointer content instead of pointer address during registry readings
+                   ENH: nlohmann JSON for Modern C++ update to 3.11.2
+2023-05-10 5.9.6.1 ENH: PHP 8.2 x64 integration (don't need x86 MSVC++ redistribuable files anymore)
+                   ENH: x86 edition of multiOTP Credential Provider can now be created/compiled from the source on GitHub
+2023-02-10 5.9.5.6 ENH: New option to enable NumLock during published apps authentication
+                   ENH: Unlock timeout handling supported for multiple accounts, FastUserSwitching is available again
+2022-11-04 5.9.4.0 FIX: Last user account is now also stored when doing unlock, which will fix some unlock timeout issues
+                   FIX: One step 2FA hide unwanted link on the login form
+2022-10-21 5.9.3.1 FIX: Better special characters support in username and password
+                   ENH: Accounts with Without2FA tokens can now also be stored in cache
+2022-08-09 5.9.2.1 ENH: Support without2FA user, unlock timeout without 2FA
+                   ENH: Users without 2FA tokens don't see the second screen during logon
+                   ENH: Autocomplete username (with the last connected username)
+2022-06-17 5.9.1.0 ENH: FastUserSwitching inactivation done during wizard (to fix unlock issue)
+                   ENH: Last connected user available
+2022-05-26 5.9.0.3 ENH: UPN and Lecagy cache handling when the domain controller is not reachable
+                   ENH: Better UPN account handling when the domain controller is not reachable
+                   ENH: Once SMS or EMAIL link is clicked, the link is hidden and a message
+                        is displayed to let the user know that the token was sent
+2022-05-06 5.8.8.0 FIX: Second factor authentication failed if no domain controller is reachable
+2022-04-29 5.8.7.1 ENH: PHP 8.1 integration
+2022-04-28 5.8.7.0 ENH: PHP 7.4 integration
+2022-04-20 5.8.6.1 ENH: If username doesn't exist in multiOTP, it try automatically a shorter domain name step by step
+                   ENH: Email token can be requested from the Credential Provider
+                   ENH: Better domain name support
+2022-01-04 5.8.5.1 ENH: Documentation added for credsui and UPN
+2021-12-24 5.8.5.0 ENH: UPN notation support reintroduced in the new implementation
+2021-09-14 5.8.4.0 FIX: multiOTPServerTimeout is now saved in a DWORD
+                   FIX: Upgrade from a previous MSI installation without uninstall and reinstall
 2021-09-14 5.8.3.0 ENH: Allow again a tile image in the same folder of the DLL
                    ENH: Remote server is optional again
 2021-08-19 5.8.2.9 ENH: MSI deployment supported
