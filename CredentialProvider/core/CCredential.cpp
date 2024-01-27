@@ -51,6 +51,7 @@
 #include "sddl.h" // multiOTP/yj
 #include "credentialprovider.h" // multiOTP/yj
 #include "wtsapi32.h" // multiOTP/yj pour utiliser WTSEnumerateSessions
+#include "Shared.h"
 
 using namespace std;
 
