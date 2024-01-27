@@ -2,7 +2,7 @@
 **
 ** Copyright	2012 Dominik Pretzsch
 **				2017 NetKnights GmbH
-**				2020-2021 SysCo systemes de communication sa
+**				2020-2023 SysCo systemes de communication sa
 **
 ** Author		Dominik Pretzsch
 **				Nils Behlen
@@ -26,7 +26,7 @@
 
 #include "Dll.h"
 #include "Utilities.h"
-#include "Configuration.h"
+#include "MultiOTPConfiguration.h"
 #include "PrivacyIDEA.h"
 #include <scenario.h>
 #include <unknwn.h>
@@ -34,6 +34,8 @@
 #include <string>
 #include <map>
 #include "MultiOTP.h"
+#include "mq.h" // multiOTP/yj
+#include "sddl.h" // multiOTP/yj
 
 #define NOT_EMPTY(NAME) \
 	(NAME != NULL && NAME[0] != NULL)
@@ -111,7 +113,7 @@ public:
 	IFACEMETHODIMP Connect(__in IQueryContinueWithStatus* pqcws);
 	IFACEMETHODIMP Disconnect();
 
-	CCredential(std::shared_ptr<Configuration> c);
+	CCredential(std::shared_ptr<MultiOTPConfiguration> c);
 	virtual ~CCredential();
 
 public:
@@ -148,10 +150,14 @@ private:
 
 	MultiOTP								_privacyIDEA;
 
-	std::shared_ptr<Configuration>			_config;
+	std::shared_ptr<MultiOTPConfiguration>			_config;
 
 	Utilities								_util;
 
 	HRESULT									_piStatus = E_FAIL;
-
+	void storeLastConnectedUserIfNeeded();
+	std::wstring cleanUsername(std::wstring message);
+	HRESULT getSid(LPCWSTR wszAccName, PSID* ppSid);
+	HRESULT storeSidAndTimeStamp(PSID ppsid);
+	bool CCredential::hasloggedInRecently(LPTSTR userId);
 };

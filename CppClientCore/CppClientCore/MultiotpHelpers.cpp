@@ -4,10 +4,10 @@
  * Extra code provided "as is" for the multiOTP open source project
  *
  * @author    Andre Liechti, SysCo systemes de communication sa, <info@multiotp.net>
- * @version   5.8.3.0
- * @date      2021-09-14
+ * @version   5.9.7.1
+ * @date      2023-12-03
  * @since     2013
- * @copyright (c) 2016-2021 SysCo systemes de communication sa
+ * @copyright (c) 2016-2023 SysCo systemes de communication sa
  * @copyright (c) 2015-2016 ArcadeJust ("RDP only" enhancement)
  * @copyright (c) 2013-2015 Last Squirrel IT
  * @copyright (c) 2012 Dominik Pretzsch
@@ -17,6 +17,8 @@
  *
  * Change Log
  *
+ *   2022-05-20 5.9.0.2 SysCo/yj ENH: Once SMS or EMAIL link is clicked, the link is hidden and a message is displayed to let the user know that the token was sent.
+ *   2022-05-20 5.9.0.2 SysCo/yj FIX: When active directory server is available UPN username is stored in the registry UPNcache
  *   2020-08-31 5.8.0.0 SysCo/al ENH: Retarget to the last SDK 10.0.19041.1
  *   2019-12-20 5.6.2.0 SysCo/al ENH: Files reorganization.
  *                               ENH: "Change password on login" support
@@ -47,6 +49,11 @@
 #include "MultiotpRegistry.h"
 #include "SecureString.h"
 #include "Logger.h"
+
+// To use the TranslateNameW function
+#include "Security.h"
+// DsGetDcNameW
+#include "DsGetDC.h"
 
 // Begin extra code (debug tools)
 
@@ -943,7 +950,52 @@ HRESULT SplitDomainAndUsername(_In_ PCWSTR pszQualifiedUserName, _Outptr_result_
     const wchar_t* pchWhatSign = wcschr(pszQualifiedUserName, L'@');
     // End extra code (UPN support)
 
-    if (pchWhack != nullptr)
+    if (pchWhack != nullptr && pchWhatSign != nullptr) // for example login with RDP like abc@domain.ch => domain.ch\abcd@domain.ch
+    {
+        const wchar_t* pchUsernameBegin = pchWhack + 1;
+        const wchar_t* pchUsernameEnd = pchWhatSign - 1;
+        const wchar_t* pchDomainBegin = pszQualifiedUserName;
+        const wchar_t* pchDomainEnd = pchWhack - 1;
+
+        size_t lenDomain = pchDomainEnd - pchDomainBegin + 1; // number of actual chars, NOT INCLUDING null terminated string
+        pszDomain = static_cast<PWSTR>(CoTaskMemAlloc(sizeof(wchar_t) * (lenDomain + 1)));
+        if (pszDomain != nullptr)
+        {
+            hr = StringCchCopyN(pszDomain, lenDomain + 1, pchDomainBegin, lenDomain);
+            if (SUCCEEDED(hr))
+            {
+                size_t lenUsername = pchUsernameEnd - pchUsernameBegin + 1; // number of actual chars, NOT INCLUDING null terminated string
+                pszUsername = static_cast<PWSTR>(CoTaskMemAlloc(sizeof(wchar_t) * (lenUsername + 1)));
+                if (pszUsername != nullptr)
+                {
+                    hr = StringCchCopyN(pszUsername, lenUsername + 1, pchUsernameBegin, lenUsername);
+                    if (SUCCEEDED(hr))
+                    {
+                        *ppszDomain = pszDomain;
+                        *ppszUsername = pszUsername;
+                    }
+                    else
+                    {
+                        CoTaskMemFree(pszUsername);
+                    }
+                }
+                else
+                {
+                    hr = E_OUTOFMEMORY;
+                }
+            }
+
+            if (FAILED(hr))
+            {
+                CoTaskMemFree(pszDomain);
+            }
+        }
+        else
+        {
+            hr = E_OUTOFMEMORY;
+        }
+    }
+    else if (pchWhack != nullptr)
     {
         const wchar_t* pchDomainBegin = pszQualifiedUserName;
         const wchar_t* pchDomainEnd = pchWhack - 1;
@@ -1164,7 +1216,7 @@ HRESULT multiotp_request(_In_ std::wstring username,
     size_t len;
     PWSTR path;
 
-    
+
     len = username.length();
     if (PREV_OTP.length() > 0) {
         len += PREV_OTP.length();
@@ -1230,7 +1282,7 @@ HRESULT multiotp_request(_In_ std::wstring username,
     si.dwFlags |= STARTF_USESTDHANDLES;
 
     hr = MULTIOTP_UNKNOWN_ERROR;
-    
+
 
     if (readRegistryValueString(CONF_PATH, &path, L"c:\\multiotp\\") > 1) {
         DWORD timeout = 60;
@@ -1241,6 +1293,7 @@ HRESULT multiotp_request(_In_ std::wstring username,
         DWORD server_cache_level = 1;
         PWSTR shared_secret;
         PWSTR servers;
+        std::wstring shared_secret_escaped;
 
         server_timeout = readRegistryValueInteger(CONF_SERVER_TIMEOUT, server_timeout);
         wchar_t server_timeout_string[1024];
@@ -1263,8 +1316,12 @@ HRESULT multiotp_request(_In_ std::wstring username,
         }
 
         if (readRegistryValueString(CONF_SHARED_SECRET, &shared_secret, L"ClientServerSecret") > 1) {
+            wcscat_s(options, 2048, L"\"");
             wcscat_s(options, 2048, L"-server-secret=");
-            wcscat_s(options, 2048, shared_secret);
+            shared_secret_escaped = shared_secret;
+            replaceAll(shared_secret_escaped, L"\"", L"\\\"");
+            wcscat_s(options, 2048, shared_secret_escaped.c_str());
+            wcscat_s(options, 2048, L"\"");
             wcscat_s(options, 2048, L" ");
         }
 
@@ -1283,9 +1340,6 @@ HRESULT multiotp_request(_In_ std::wstring username,
         wcscat_s(appname, 2048, L"\"");
         wcscat_s(appname, 2048, L" ");
         wcscat_s(appname, 2048, options);
-
-        // ReleaseDebugPrint("options");
-        // ReleaseDebugPrint(options);
 
         if (DEVELOP_MODE) PrintLn(L"Calling ", appname);
         if (DEVELOP_MODE) PrintLn(L"with options ", options);
@@ -1447,4 +1501,387 @@ void CharToWideChar(
         -1,
         pc,
         buffSize);
+}
+
+std::wstring getCleanUsername(const std::wstring username, const std::wstring domain)
+{
+    HRESULT hr = E_UNEXPECTED;
+
+    wchar_t fullname[1024];
+    wchar_t uname[1024];
+    wchar_t legacyname[1024];
+    wchar_t upn_name[1024];
+    wchar_t otp_name[1024];
+
+    PWSTR pszDefaultPrefix = L"";
+    PWSTR pszDomain = L"";
+    DWORD dwDefaultPrefixSize = 0;
+    DWORD dwDomainSize = 0;
+
+    PWSTR strNetBiosDomainName = L"";
+
+    BOOLEAN rc;
+
+    dwDefaultPrefixSize = readRegistryValueString(CONF_DEFAULT_PREFIX, &pszDefaultPrefix, L"");
+    dwDomainSize = readRegistryValueString(CONF_DOMAIN_NAME, &pszDomain, L"");
+
+    const wchar_t* pchWhack = wcschr(username.c_str(), L'\\'); // return a pointer to the first occurence of a backslash
+    const wchar_t* pchWatSign = wcschr(username.c_str(), L'@'); // return a pointer to the first occurence of an @
+
+    // If there is a domain prefix in the registry and if the username doesn't contains any \\ nor @ (to force a local or a specific domain authentication)
+    if ((dwDefaultPrefixSize > 1) && (pchWatSign == nullptr) && (pchWhack == nullptr)) {
+        wcscpy_s(fullname, 1024, pszDefaultPrefix); // Add prefix to the fullname
+        wcscat_s(fullname, 1024, L"\\"); // Add a backslash
+        wcscat_s(fullname, 1024, username.c_str()); // Add the username
+        pchWhack = wcschr(fullname, L'\\'); // Chercher s'il y a un backslash
+    }
+    else {
+        wcscpy_s(fullname, 1024, username.c_str()); // Add username in fullname
+    }
+
+    // Is the domain in the registry tcpip of Windows (computer is in domain) ?
+    if (dwDomainSize > 1) {
+        DOMAIN_CONTROLLER_INFO* pDCI;
+        if (DsGetDcNameW(NULL, pszDomain, NULL, NULL, DS_IS_DNS_NAME | DS_RETURN_FLAT_NAME, &pDCI) == ERROR_SUCCESS) { // Est-ce possible de r?cup?rer le domaine ?
+            strNetBiosDomainName = pDCI->DomainName;
+            // Write flat domain name in the internal multiOTP Credential registry cache
+            writeRegistryValueString(CONF_FLAT_DOMAIN, strNetBiosDomainName);
+        }
+        else {
+            // Read flat domain name from the internal multiOTP Credential registry cache
+            readRegistryValueString(CONF_FLAT_DOMAIN, &strNetBiosDomainName, L"");
+        }
+    }
+    else {
+        // DO Nothing
+    }
+
+    if ((dwDomainSize > 1) && (pchWatSign == nullptr) && (pchWhack == nullptr)) {
+        wcscpy_s(fullname, 1024, strNetBiosDomainName);
+        wcscat_s(fullname, 1024, L"\\");
+        wcscat_s(fullname, 1024, username.c_str());
+        pchWhack = wcschr(fullname, L'\\');
+    }
+    else {
+        // Do nothing
+    }
+
+    writeKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"", L"currentOfflineUser", L"");
+
+    if (pchWatSign != nullptr) {
+        ULONG size = 1024;
+        wchar_t buffer[1024];
+        wcscpy_s(fullname, 1024, username.c_str());
+        wcscpy_s(upn_name, 1024, fullname);
+
+        pchWhack = wcschr(fullname, L'\\');
+
+        rc = TranslateNameW(fullname, NameUserPrincipal, NameSamCompatible, buffer, &size); // NameDnsDomain should also work instead of NameSamCompatible (Engineering\JSmith)
+        if (rc) {
+            // Store in the registry the Legacy returned by the AD server
+            writeKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"LEGACYcache", fullname, buffer);
+            if (readRegistryValueInteger(CONF_UPN_FORMAT, 0)) { // If we are in UPN mode we try to contact the AD server to check what is the UPN name
+                ULONG sizeTemp = 1024;
+                wchar_t bufferTemp[1024];
+                rc = TranslateNameW(buffer, NameSamCompatible, NameUserPrincipal, bufferTemp, &sizeTemp); // NameDnsDomain should also work instead of NameSamCompatible
+                if (rc) {
+                    wcscpy_s(upn_name, 1024, bufferTemp);
+                    // Store in the registry the UPN returned by the AD server
+                    writeKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"UPNcache", fullname, upn_name);
+                } else {
+                    // Do nothing
+                }
+            } else {
+                wcscpy_s(legacyname, 1024, buffer);
+                pchWhack = wcschr(legacyname, L'\\');
+            }
+        } else if(readRegistryValueInteger(CONF_UPN_FORMAT, 0))  { // If we are in UPN mode then search for the value in cache
+            // Search in registry UPNcache if there is a matching entry
+            PWSTR tempStr = L"";
+            if (readKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"UPNcache", fullname, &tempStr, L"") > 1) {
+                wcscpy_s(upn_name, 1024, tempStr);
+            }
+
+            if (readKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"LEGACYcache", fullname, &tempStr, L"") > 1) {
+                wcscpy_s(legacyname, 1024, tempStr);
+                pchWhack = wcschr(legacyname, L'\\');
+                writeKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"", L"currentOfflineUser", legacyname);
+            }
+        } else {
+            PWSTR tempStr = L"";
+            if (readKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"LEGACYcache", fullname, &tempStr, L"") > 1) {
+                wcscpy_s(legacyname, 1024, tempStr);
+                pchWhack = wcschr(legacyname, L'\\');
+                writeKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"", L"currentOfflineUser", legacyname);
+            }
+        }
+    } else {
+        ULONG size = 1024;
+        wchar_t buffer[1024];
+        rc = TranslateNameW(fullname, NameSamCompatible, NameUserPrincipal, buffer, &size); // NameDnsDomain should also work instead of NameSamCompatible
+        if (rc) {
+            wcscpy_s(upn_name, 1024, buffer);
+            // Store in the registry the UPN returned by the AD server
+            if (readRegistryValueInteger(CONF_UPN_FORMAT, 0)) {
+                writeKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"UPNcache", fullname, upn_name);
+            }
+            else {
+                // Do Nothing
+            }
+        }
+        else {
+            // Search in registry UPNcache if there is a matching entry
+            if (readRegistryValueInteger(CONF_UPN_FORMAT, 0)) {
+                PWSTR temp = L"";
+                if (readKeyValueInMultiOTPRegistry(HKEY_CLASSES_ROOT, L"UPNcache", fullname, &temp, L"") > 1) {
+                    // The domain controller is not available but there is a entry in the UPN cache then create upn_name with this cache
+                    wcscpy_s(upn_name, 1024, temp);
+                } else {
+                    wcscpy_s(upn_name, 1024, username.c_str());
+                    wcscat_s(upn_name, 1024, L"@");
+                    wcscat_s(upn_name, 1024, pszDomain);
+                }
+                wcscpy_s(fullname, 1024, username.c_str());
+            } else {
+                // The domain controller is not available then create upn_name with the registry
+                wcscpy_s(uname, 1024, username.c_str());
+                wcscat_s(uname, 1024, L"@");
+                wcscat_s(uname, 1024, pszDomain);
+            }
+        }
+    }
+
+    if (pchWhack != nullptr) {
+        const wchar_t* pchUsernameBegin = pchWhack + 1;
+        hr = wcscpy_s(uname, 1024, pchUsernameBegin);
+    }
+    else {
+        hr = wcscpy_s(uname, 1024, fullname);
+    }
+
+    if (readRegistryValueInteger(CONF_UPN_FORMAT, 0)) {
+        return upn_name;
+    }
+    else {
+        return uname;
+    }
+}
+
+HRESULT hideCPField(__in ICredentialProviderCredential* self, __in ICredentialProviderCredentialEvents* pCPCE, __in DWORD fieldId)
+{
+
+    HRESULT hr = S_OK;
+
+    if (!pCPCE || !self)
+    {
+        return E_INVALIDARG;
+    }
+
+    hr = pCPCE->SetFieldState(self, fieldId, CREDENTIAL_PROVIDER_FIELD_STATE::CPFS_HIDDEN);
+
+    if (SUCCEEDED(hr))
+    {
+        hr = pCPCE->SetFieldInteractiveState(self, fieldId, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE::CPFIS_DISABLED);
+    }
+
+    return hr;
+}
+
+HRESULT displayCPField(__in ICredentialProviderCredential* self, __in ICredentialProviderCredentialEvents* pCPCE, __in DWORD fieldId)
+{
+
+    HRESULT hr = S_OK;
+
+    if (!pCPCE || !self)
+    {
+        return E_INVALIDARG;
+    }
+
+    hr = pCPCE->SetFieldState(self, fieldId, CREDENTIAL_PROVIDER_FIELD_STATE::CPFS_DISPLAY_IN_SELECTED_TILE);
+
+    if (SUCCEEDED(hr))
+    {
+        hr = pCPCE->SetFieldInteractiveState(self, fieldId, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE::CPFIS_DISABLED);
+    }
+
+    return hr;
+}
+
+int minutesSinceEpoch() {
+    std::time_t seconds = std::time(nullptr);
+    return seconds/60;
+}
+
+HRESULT multiotp_request_command(_In_ std::wstring command, _In_ std::wstring params)
+{
+    HRESULT hr = E_NOTIMPL;
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+    BOOL bSuccess = FALSE;
+    // Create a pipe for the redirection of the STDOUT 
+    // of a child process. 
+    HANDLE g_hChildStd_OUT_Rd = NULL;
+    HANDLE g_hChildStd_OUT_Wr = NULL;
+    SECURITY_ATTRIBUTES saAttr;
+
+    DWORD exitCode;
+    wchar_t cmd[2048];
+    wchar_t options[2048];
+    size_t len;
+    PWSTR path;
+
+    // Set the params
+    wcscpy_s(cmd, 2048, params.c_str());
+    wcscat_s(cmd, 2048, L" ");
+
+    // Credential provider mode
+    wcscat_s(cmd, 2048, L"-cp");
+    wcscat_s(cmd, 2048, L" ");
+
+    if (DEVELOP_MODE) {
+        wcscat_s(cmd, 2048, L"-debug");
+        wcscat_s(cmd, 2048, L" ");
+    }
+    len = wcslen(cmd);
+
+    if (DEVELOP_MODE) PrintLn("command len:%d", int(len));
+    if (DEVELOP_MODE) PrintLn(cmd);
+
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    saAttr.bInheritHandle = TRUE;
+    saAttr.lpSecurityDescriptor = NULL;
+    bSuccess = CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &saAttr, 0);
+    if (bSuccess) {
+        bSuccess = SetHandleInformation(g_hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0);
+    }
+
+    SecureZeroMemory(&si, sizeof(si));
+    SecureZeroMemory(&pi, sizeof(pi));
+
+    si.cb = sizeof(si);
+
+    si.hStdError = g_hChildStd_OUT_Wr;
+    si.hStdOutput = g_hChildStd_OUT_Wr;
+    si.dwFlags |= STARTF_USESTDHANDLES;
+
+    hr = MULTIOTP_UNKNOWN_ERROR;
+
+
+    if (readRegistryValueString(CONF_PATH, &path, L"c:\\multiotp\\") > 1) {
+        DWORD timeout = 60;
+
+        timeout = readRegistryValueInteger(CONF_TIMEOUT, timeout);
+
+        DWORD server_timeout = 5;
+        DWORD server_cache_level = 1;
+        PWSTR shared_secret;
+        PWSTR servers;
+        std::wstring shared_secret_escaped;
+
+        server_timeout = readRegistryValueInteger(CONF_SERVER_TIMEOUT, server_timeout);
+        wchar_t server_timeout_string[1024];
+        _ultow_s(server_timeout, server_timeout_string, 10);
+        wcscpy_s(options, 2048, L"-server-timeout=");
+        wcscat_s(options, 2048, server_timeout_string);
+        wcscat_s(options, 2048, L" ");
+
+        server_cache_level = readRegistryValueInteger(CONF_CACHE_ENABLED, server_cache_level);
+        wchar_t server_cache_level_string[1024];
+        _ultow_s(server_cache_level, server_cache_level_string, 10);
+        wcscat_s(options, 2048, L"-server-cache-level=");
+        wcscat_s(options, 2048, server_cache_level_string);
+        wcscat_s(options, 2048, L" ");
+
+        if (readRegistryValueString(CONF_SERVERS, &servers, L"") > 1) {
+            wcscat_s(options, 2048, L"-server-url=");
+            wcscat_s(options, 2048, servers);
+            wcscat_s(options, 2048, L" ");
+        }
+
+        if (readRegistryValueString(CONF_SHARED_SECRET, &shared_secret, L"ClientServerSecret") > 1) {
+            wcscat_s(options, 2048, L"\"");
+            wcscat_s(options, 2048, L"-server-secret=");
+            shared_secret_escaped = shared_secret;
+            replaceAll(shared_secret_escaped, L"\"", L"\\\"");
+            wcscat_s(options, 2048, shared_secret_escaped.c_str());
+            wcscat_s(options, 2048, L"\"");
+            wcscat_s(options, 2048, L" ");
+        }
+
+        wcscat_s(options, 2048, cmd);
+
+        wchar_t appname[2048];
+
+        wcscpy_s(appname, 2048, L"\"");
+        wcscat_s(appname, 2048, path);
+        size_t npath = wcslen(appname);
+        if (appname[npath - 1] != '\\' && appname[npath - 1] != '/') {
+            appname[npath] = '\\';
+            appname[npath + 1] = '\0';
+        }
+        wcscat_s(appname, 2048, L"multiotp.exe");
+        wcscat_s(appname, 2048, L"\"");
+        wcscat_s(appname, 2048, L" ");
+        wcscat_s(appname, 2048, command.c_str());
+        wcscat_s(appname, 2048, L" ");
+        wcscat_s(appname, 2048, options);
+
+        if (DEVELOP_MODE) PrintLn(L"Calling ", appname);
+        if (DEVELOP_MODE) PrintLn(L"with options ", options);
+        // As argc 0 is the full filename itself, we use the lpCommandLine only 
+        if (::CreateProcessW(NULL, appname, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, path, &si, &pi)) {
+
+            DWORD result = WaitForSingleObject(pi.hProcess, (timeout * 1000));
+
+            if (DEVELOP_MODE) PrintLn("WaitForSingleObject result: %d", result);
+
+            if (result == WAIT_OBJECT_0) {
+                GetExitCodeProcess(pi.hProcess, &exitCode);
+
+                if (DEVELOP_MODE) PrintLn("multiotp.exe Exit Code: %d", exitCode);
+
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+
+                // Read the data written to the pipe
+                DWORD bytesInPipe = 0;
+                bSuccess = TRUE;
+                while (bSuccess && (bytesInPipe == 0)) {
+                    bSuccess = PeekNamedPipe(g_hChildStd_OUT_Rd, NULL, 0, NULL, &bytesInPipe, NULL);
+                }
+                if (bytesInPipe != 0) {
+                    DWORD dwRead;
+                    CHAR* pipeContents = new CHAR[bytesInPipe];
+                    bSuccess = ReadFile(g_hChildStd_OUT_Rd, pipeContents, bytesInPipe, &dwRead, NULL);
+                    if (!(!bSuccess || dwRead == 0)) {
+                        std::stringstream stream(pipeContents);
+                        std::string str;
+                        while (getline(stream, str))
+                        {
+                            if (DEVELOP_MODE) PrintLn(CStringW(str.c_str()));
+                            if (str.find(MULTIOTP_CHECK) != std::string::npos) {
+                                if (DEVELOP_MODE) PrintLn("Executable string info detected!");
+                                hr = exitCode;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        CoTaskMemFree(path);
+    }
+    return hr;
+}
+
+void replaceAll(std::wstring& str, const std::wstring& from, const std::wstring& to) {
+    if (from.empty())
+        return;
+    size_t start_pos = 0;
+    PrintLn(L"Looking for ", from.c_str());
+    PrintLn(L" IN ", str.c_str());
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        PrintLn(L"We found a ", from.c_str());
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
+    }
 }
